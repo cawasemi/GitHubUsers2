@@ -10,6 +10,7 @@ import Foundation
 import Alamofire
 import SwiftyJSON
 import PromiseKit
+import Himotoki
 
 protocol GitHubApiRequest {
 //    associatedtype Response: ResponseProtocol
@@ -21,7 +22,11 @@ protocol GitHubApiRequest {
     var encoding: Alamofire.ParameterEncoding { get }
     var headers: Alamofire.HTTPHeaders? { get }
     
-    func call() -> Promise<Void>
+    var linkIndexKey: String { get }
+    var nextIndex: Int64 { get set }
+    var lastIndex: Int64 { get set }
+    
+    func call() -> Promise<Bool>
 }
 
 extension GitHubApiRequest {
@@ -37,16 +42,16 @@ extension GitHubApiRequest {
         return ["Authorization": GitHubApiManager.shared.accessToken]
     }
 
-    func call() -> Promise<Void> {
-        return Promise<Void> { resolver in
+    func call() -> Promise<Bool> {
+        return Promise<Bool> { resolver in
             let url = baseURL.appendingPathComponent(path)
             
             Alamofire.request(url, method: method, parameters: parameters, encoding: encoding, headers: headers).validate(statusCode: 200..<300).responseJSON { (response) in
                 if let error = response.error {
-                    resolver.resolve(error)
+                    resolver.reject(error)
                     return
                 }
-                resolver.fulfill_()
+                resolver.fulfill(true)
             }
         }
     }
@@ -56,10 +61,43 @@ extension GitHubApiRequest {
         
         return Alamofire.request(url, method: method, parameters: parameters, encoding: encoding, headers: headers)
     }
-
+    
+    func parseIndexLink(_ `link`: String, target: String) -> Int64 {
+        if linkIndexKey.isEmpty { return -1 }
+        let links = link.components(separatedBy: ",")
+        if links.isEmpty {
+            return -1
+        }
+        guard let nextLink = links.first(where: {$0.contains("rel=\"\(target)\"")}) else {
+            return -1
+        }
+        return parseIndex(from: nextLink)
+    }
+    
+    private func parseLinkUrl(_ `link`: String) -> URL? {
+        guard let endIndex = link.lastIndex(of: ">") else {
+            return nil
+        }
+        let startIndex = link.index(link.startIndex, offsetBy: 1)
+        let urlString = link[startIndex..<endIndex]
+        return URL(string: String(urlString))
+    }
+    
+    private func parseIndex(from nextLink: String) -> Int64 {
+        if linkIndexKey.isEmpty { return -1 }
+        guard let urlQuery = parseLinkUrl(nextLink)?.query,
+            let sinceQuery = urlQuery.components(separatedBy: "&").first(where: {$0.contains(linkIndexKey)}) else {
+                return -1
+        }
+        let work = sinceQuery.components(separatedBy: "=")
+        if work.count != 2 {
+            return -1
+        }
+        return Int64(work[1]) ?? -1
+    }
 }
 
-protocol ResponseProtocol: Decodable {
+protocol ResponseProtocol: Swift.Decodable {
     
 }
 
@@ -83,6 +121,12 @@ class GitHubAuthorizer: GitHubApiRequest {
     var headers: HTTPHeaders? {
         return nil
     }
+    
+    var linkIndexKey: String {
+        return ""
+    }
+    var nextIndex: Int64 = -1
+    var lastIndex: Int64 = -1
     
     private var code: String
     
@@ -110,14 +154,56 @@ class GitHubAllUsers: GitHubApiRequest {
 
     private var since: Int64
     
+    var linkIndexKey: String {
+        return "since"
+    }
+    var nextIndex: Int64 = -1
+    var lastIndex: Int64 = -1
+
     init() {
         self.since = 0
+        self.nextIndex = -1
+        self.lastIndex = -1
     }
     
     func next(_ since: Int64) {
         self.since = since
-        request.responseJSON { (response) in
-            
+        request.responseJSON {[weak self] (response) in
+            if let error = response.error {
+                dump(error)
+                return
+            }
+            if let `link` = response.response?.allHeaderFields["Link"] as? String {
+                self?.nextIndex = self?.parseIndexLink(link, target: "next") ?? -1
+                self?.lastIndex = self?.parseIndexLink(link, target: "last") ?? -1
+            }
+
+            guard let resultValue = response.result.value else {
+                return
+            }
+            print("\(#function)")
+            let jsonData = SwiftyJSON.JSON(resultValue)
+            if let array = jsonData.array {
+                print("Array: ")
+                print(array)
+                array.forEach({ (item) in
+                    let id = item["id"]
+                    let login = item["login"]
+                    let iconUrl = item["avatar_url"]
+                    print("\(id) :: \(login)")
+                })
+            }
+            if let dictionary = jsonData.dictionary {
+                print("Dictionary: ")
+                print(dictionary)
+            }
+            do {
+                let workResult: [GitHubSearchUser] = try decodeArray(resultValue)
+                print()
+            } catch let error {
+                dump(error)
+            }
+            print("----")
         }
     }
 }
