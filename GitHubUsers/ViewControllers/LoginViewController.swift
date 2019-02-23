@@ -88,21 +88,20 @@ extension LoginViewController: WKNavigationDelegate {
         }
         
         guard let code = wCode else {
-            completion()
+            showNotAutorizedMessage(completion)
             return
         }
         
-        let request = GitHubApiManager.AuthrizedRequest(code: code)
-        APIKit.Session.send(request) { [weak self] (result) in
-            switch result {
-            case .success(let response):
-                GitHubApiManager.shared.accessToken = response.accessToken
-                completion()
-            case .failure(let error):
-                self?.printError(error)
-                let errorMessage = "認証に失敗しました。\n時間をおいて改めて操作をお願いします。"
-                self?.showErrorMessage(errorMessage, completion: completion)
-            }
+        GitHubApiAuthorizer().authorizer(code).done { (accessToken) in
+            GitHubApiManager.shared.accessToken = accessToken
+            completion()
+        }.catch { [weak self] (error) in
+            self?.showNotAutorizedMessage(completion)
         }
+    }
+    
+    private func showNotAutorizedMessage(_ completion: @escaping (() -> Void)) {
+        let errorMessage = "認証に失敗しました。\n時間をおいて改めて操作をお願いします。"
+        self.showErrorMessage(errorMessage, completion: completion)
     }
 }

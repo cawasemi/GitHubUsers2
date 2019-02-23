@@ -30,8 +30,10 @@ class UserDetailViewController: CommonViewController {
     var userName: String?
     var userId: Int64 = -1
     
+    private var userRepositoriesApi = GitHubApiUserRepositories()
+    
     /// リポジトリー一覧
-    private var repositories: [GitHubUserRepository] = []
+    private var repositories: [GitHubRepository] = []
 
     /// 取得済みのページ数
     private var pageNo: Int = 0
@@ -106,14 +108,12 @@ class UserDetailViewController: CommonViewController {
         
         loadingView.startLoading()
 
-        let request = GitHubApiManager.GitHubUserRequest(login: name)
-        APIKit.Session.send(request) { [weak self] (result) in
-            switch result {
-            case .success(let response):
-                self?.updateUserData(response)
-            case .failure(let error):
-                self?.showApiErrorMessage(error)
-            }
+        GitHubApiUser().getUser(name).done { [weak self] (result) in
+            self?.updateUserData(result)
+        }.ensure { [weak self] in
+            self?.loadingView.stopLoading()
+        }.catch { [weak self] (error) in
+            self?.showApiErrorMessage(error)
         }
     }
 
@@ -127,17 +127,13 @@ class UserDetailViewController: CommonViewController {
         }
 
         isCallingApi = true
-        let request = GitHubApiManager.GitHubUserRepositoriesRequest(login: login, pageNo: nextPageNo)
-        APIKit.Session.send(request) { [weak self] (result) in
-            switch result {
-            case .success(let response):
-                self?.pageNo = nextPageNo
-                self?.updateUserRepositories(response)
-                break
-            case .failure(let error):
-                self?.printError(error)
-            }
+        userRepositoriesApi.next(nextPageNo, login: login).done { [weak self] (result) in
+            self?.pageNo = nextPageNo
+            self?.updateUserRepositories(result)
+        }.ensure { [weak self] in
             self?.isCallingApi = false
+        }.catch { [weak self] (error) in
+            self?.printError(error)
         }
     }
     
@@ -149,7 +145,7 @@ class UserDetailViewController: CommonViewController {
         hasNextRepositories = true
         loadUserRepositories(nextPageNo: 1)
 
-        if let urlString = user.iconUrl, let iconUrl = URL(string: urlString) {
+        if let urlString = user.avatarUrl, let iconUrl = URL(string: urlString) {
             Nuke.loadImage(with: iconUrl, into: userIconView)
         }
         loginNameLabl.text = user.login
@@ -159,12 +155,12 @@ class UserDetailViewController: CommonViewController {
         followingCountLabel.text = user.following.decimalFormat
     }
     
-    private func updateUserRepositories(_ repositories: [GitHubUserRepository]) {
+    private func updateUserRepositories(_ repositories: [GitHubRepository]) {
         if 0 < self.repositories.count && repositories.isEmpty {
             hasNextRepositories = false
             return
         }
-        let noForks = repositories.filter({!$0.isFork}).map({$0})
+        let noForks = repositories.filter({($0.fork != true)}).map({$0})
         if let _ = self.repositories.last(where: {$0.id == noForks.last?.id}) {
             hasNextRepositories = false
             return
@@ -182,7 +178,7 @@ class UserDetailViewController: CommonViewController {
         }
     }
 
-    private func showApiErrorMessage(_ error: SessionTaskError) {
+    private func showApiErrorMessage(_ error: Error) {
         printError(error)
         let errorMessage = "ユーザーの情報が取得できませんでした。\n時間をおいて改めて操作をお願いします。"
         showErrorMessage(errorMessage) { [weak self] in

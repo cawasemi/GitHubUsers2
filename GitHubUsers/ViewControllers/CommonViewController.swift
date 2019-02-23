@@ -38,17 +38,17 @@ class CommonViewController: UIViewController {
         present(alert, animated: true, completion: nil)
     }
 
-    final func printError(_ error: SessionTaskError) {
-        switch error {
-        case .responseError(let error as GitHubError):
-            print(error.message) // Prints message from GitHub API
-            
-        case .connectionError(let error):
-            print("Connection error: \(error)")
-            
-        default:
-            print("System error :bow:")
-        }
+    final func printError(_ error: Error) {
+//        switch error {
+//        case .responseError(let error as GitHubError):
+//            print(error.message) // Prints message from GitHub API
+//
+//        case .connectionError(let error):
+//            print("Connection error: \(error)")
+//
+//        default:
+//            print("System error :bow:")
+//        }
     }
 }
 
@@ -68,6 +68,12 @@ extension Int64 {
         }
         let mValue = kValue / 1000
         return String(format: "%.1lfm", mValue)
+    }
+}
+
+extension Int {
+    var decimalFormat: String {
+        return Int64(self).decimalFormat
     }
 }
 

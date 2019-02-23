@@ -24,7 +24,7 @@ class UsersViewController: CommonViewController {
     fileprivate let cellHeigh: CGFloat = 64.0 + 8.0 * 2
     
     /// ユーザー一覧
-    fileprivate var users: [GitHubSearchUser] = []
+    fileprivate var users: [GitHubUser] = []
 
     /// 検索条件に一致するユーザー数
     ///
@@ -53,7 +53,8 @@ class UsersViewController: CommonViewController {
     /// 検索バーでキャンセルされた時に表示を戻すため。
     private var searchKeyword: String? = nil
     
-    private let manager: GitHubAllUsers = GitHubAllUsers()
+    private let allUsersApi = GitHubApiAllUsers()
+    private let searchUsersApi = GitHubApiSearchUsers()
     
     override func viewDidLoad() {
         super.viewDidLoad()
@@ -201,34 +202,26 @@ class UsersViewController: CommonViewController {
         }
 
         isAllUsers = false
-        let request = GitHubApiManager.SearchUsersRequest(query: keyword, pageNo: nextPageNo)
-        APIKit.Session.send(request) { [weak self] (result) in
-            switch result {
-            case .success(let response):
-                self?.totalUers = response.totalCount
-                self?.updateUsersTableView(response.items, nextPageNo: nextPageNo)
-            case .failure(let error):
-                self?.showApiErrorMessage(error)
-            }
+        searchUsersApi.next(query: keyword, pageNo: nextPageNo).done { [weak self] (result) in
+            self?.totalUers = result.totalCount
+            self?.updateUsersTableView(result.items, nextPageNo: nextPageNo)
+        }.ensure { [weak self] in
             self?.didLoadUserData()
+        }.catch { [weak self] (error) in
+            self?.showApiErrorMessage(error)
         }
     }
     
     /// すべてのユーザーを取得する。
     private func loadAllUsers(nextPageNo: Int64) {
         isAllUsers = true
-//        let request = GitHubApiManager.AllUsersRequest(since: nextPageNo)
-//        APIKit.Session.send(request) { [weak self] (result) in
-//            switch result {
-//            case .success(let response):
-//                self?.totalUers = -1
-//                self?.updateUsersTableView(response, nextPageNo: nextPageNo)
-//            case .failure(let error):
-//                self?.showApiErrorMessage(error)
-//            }
-//            self?.didLoadUserData()
-//        }
-        manager.next(nextPageNo)
+        allUsersApi.next(nextPageNo).done { [weak self] (result) in
+            self?.updateUsersTableView(result, nextPageNo: nextPageNo)
+        }.ensure { [weak self] in
+            self?.didLoadUserData()
+        }.catch { [weak self] (error) in
+            self?.showApiErrorMessage(error)
+        }
     }
     
     /// ユーザー情報の取得が完了した時の処理を行う。
@@ -241,7 +234,7 @@ class UsersViewController: CommonViewController {
     }
     
     /// ユーザー一覧テーブルを更新する。
-    private func updateUsersTableView(_ users: [GitHubSearchUser], nextPageNo: Int64) {
+    private func updateUsersTableView(_ users: [GitHubUser], nextPageNo: Int64) {
         if nextPageNo <= 1 {
             self.users.removeAll()
             usersTableView.setContentOffset(.zero, animated: false)
@@ -275,8 +268,8 @@ class UsersViewController: CommonViewController {
         }
     }
     
-    private func showApiErrorMessage(_ error: SessionTaskError) {
-        printError(error)
+    private func showApiErrorMessage(_ error: Error) {
+//        printError(error)
         let errorMessage = "ユーザーの検索に失敗しました。\n時間をおいて改めて操作をお願いします。"
         showErrorMessage(errorMessage, completion: nil)
     }
@@ -294,7 +287,7 @@ extension UsersViewController: UITableViewDataSource {
     func tableView(_ tableView: UITableView, cellForRowAt indexPath: IndexPath) -> UITableViewCell {
         let userCell = tableView.dequeueReusableCell(withIdentifier: R.reuseIdentifier.userTableViewCell, for: indexPath)!
         if let user = users.tryGet(indexPath.row) {
-            userCell.prepareUserData(iconUrl: user.iconUrl, userName: user.login)
+            userCell.prepareUserData(iconUrl: user.avatarUrl, userName: user.login)
         }
         return userCell
     }

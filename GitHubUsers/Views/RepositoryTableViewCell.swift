@@ -50,11 +50,11 @@ class RepositoryTableViewCell: UITableViewCell {
     }
 
     /// 表示する内容により可変になるので、セルの高さを求める。
-    class func cellHeight(_ value: GitHubUserRepository, baseWidth: CGFloat) -> CGFloat {
+    class func cellHeight(_ value: GitHubRepository, baseWidth: CGFloat) -> CGFloat {
         var height: CGFloat = 0
         height += ceil(nameFont.lineHeight)
         height += ceil(languageFont.lineHeight)
-        if let description = value.description {
+        if let description = value.descriptionField {
             // 説明を表示するのに必要なサイズを計算する。
             let maxWidth = baseWidth - 16.0 * 2
             let descriptionSize = description.requiredSize(maxWidth: maxWidth, font: descriptionFont)
@@ -105,14 +105,14 @@ class RepositoryTableViewCell: UITableViewCell {
         repositoryDescriptionLabel.text = nil
     }
     
-    func prepareRepositoryData(_ value: GitHubUserRepository) {
+    func prepareRepositoryData(_ value: GitHubRepository) {
         repositoryNameLabel.text = value.name
         if let language = value.language, !language.isEmpty {
             languageLabel.text = language
         } else {
             languageLabel.text = "-"
         }
-        stargazersLabel.text = value.stargazers.decimalFormat
-        repositoryDescriptionLabel.text = value.description
+        stargazersLabel.text = value.stargazersCount.decimalFormat
+        repositoryDescriptionLabel.text = value.descriptionField
     }
 }
